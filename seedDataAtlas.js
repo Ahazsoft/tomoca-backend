@@ -1,28 +1,46 @@
-const mongoose = require('mongoose');
-const Product = require('./models/Product');
-const Blog = require('./models/Blog');
-const StoreLocation = require('./models/StoreLocation');
-const Testimonial = require('./models/Testimonial');
-const Event = require('./models/Event');
-const Comment = require('./models/Comment');
+const { MongoClient, ServerApiVersion } = require('mongodb');
+const dotenv = require('dotenv');
+const path = require('path');
 
-const seedData = async () => {
+// Load environment variables from .env.atlas
+dotenv.config({ path: path.join(__dirname, '.env.atlas') });
+
+const uri = process.env.MONGODB_URI;
+
+if (!uri) {
+  console.error('Error: MONGODB_URI not found in .env.atlas');
+  process.exit(1);
+}
+
+// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+});
+
+async function run() {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/tomocadb');
+    // Connect the client to the server
+    await client.connect();
+
+    // Send a ping to confirm a successful connection
+    await client.db("admin").command({ ping: 1 });
+    console.log("Pinged your deployment. You successfully connected to MongoDB Atlas!");
+
+    const db = client.db("tomocadb");
 
     // Clear existing data
-    await Promise.all([
-      Product.deleteMany({}),
-      Blog.deleteMany({}),
-      StoreLocation.deleteMany({}),
-      Testimonial.deleteMany({}),
-      Category.deleteMany({}),
-      Event.deleteMany({}),
-      Comment.deleteMany({}),
-    ]);
+    console.log("Cleaning existing collections...");
+    const collections = ['products', 'blogs', 'storelocations', 'testimonials', 'categories', 'events', 'comments'];
+    for (const col of collections) {
+      await db.collection(col).deleteMany({});
+    }
 
     // ─────────────────────────────────────────────────────────────
-    // PRODUCTS  (exactly matching the provided image)
+    // PRODUCTS
     // ─────────────────────────────────────────────────────────────
     const sampleProducts = [
       {
@@ -180,39 +198,40 @@ const seedData = async () => {
       },
     ];
 
-    const insertedProducts = await Product.insertMany(sampleProducts);
-    console.log(`✓ Products seeded: ${insertedProducts.length}`);
+    const productResult = await db.collection("products").insertMany(sampleProducts);
+    console.log(`✓ Products seeded: ${productResult.insertedCount}`);
+
+    // mapping IDs for categories
+    const products = await db.collection("products").find({}).toArray();
+    const coffeeIds = products.filter(p => p.category === 'Coffee').map(p => p._id);
+    const accessoryIds = products.filter(p => p.category === 'Accessories').map(p => p._id);
 
     // ─────────────────────────────────────────────────────────────
     // CATEGORIES
     // ─────────────────────────────────────────────────────────────
-    const coffeeProducts = insertedProducts.filter(p => p.category === 'Coffee');
-    const accessoryProducts = insertedProducts.filter(p => p.category === 'Accessories');
-
     const sampleCategories = [
       {
         id: 1,
         parent: 'Coffee',
         type: 'coffee',
         img: '/assets/img/category/category-1.jpg',
-        products: coffeeProducts.map(p => p._id),
+        products: coffeeIds,
       },
       {
         id: 2,
         parent: 'Accessories',
         type: 'accessories',
         img: '/assets/img/category/category-6.jpg',
-        products: accessoryProducts.map(p => p._id),
+        products: accessoryIds,
       },
     ];
-
-    await Category.insertMany(sampleCategories);
+    await db.collection("categories").insertMany(sampleCategories);
     console.log(`✓ Categories seeded: ${sampleCategories.length}`);
 
     // ─────────────────────────────────────────────────────────────
-    // OTHER COLLECTIONS (Minimal placeholders)
+    // STORE LOCATIONS
     // ─────────────────────────────────────────────────────────────
-    await StoreLocation.insertMany([
+    const locations = [
       {
         id: 1,
         name: 'Tomoca Piassa (Historical)',
@@ -243,7 +262,9 @@ const seedData = async () => {
         contact: '+251 11 555 6666',
         description: 'Serving the Bishoftu community with premium Ethiopian coffee.',
       },
-    ]);
+    ];
+    await db.collection("storelocations").insertMany(locations);
+    console.log(`✓ Store locations seeded: ${locations.length}`);
 
     // ─────────────────────────────────────────────────────────────
     // BLOGS
@@ -406,11 +427,13 @@ const seedData = async () => {
         blog: 'blog-grid'
       },
     ];
-
-    await Blog.insertMany(blogs);
+    await db.collection("blogs").insertMany(blogs);
     console.log(`✓ Blogs seeded: ${blogs.length}`);
 
-    await Testimonial.insertMany([
+    // ─────────────────────────────────────────────────────────────
+    // TESTIMONIALS
+    // ─────────────────────────────────────────────────────────────
+    await db.collection("testimonials").insertMany([
       {
         id: 1,
         review: 5,
@@ -419,8 +442,12 @@ const seedData = async () => {
         designation: 'Regular Customer',
       }
     ]);
+    console.log("✓ Testimonials seeded.");
 
-    await Event.insertMany([
+    // ─────────────────────────────────────────────────────────────
+    // EVENTS
+    // ─────────────────────────────────────────────────────────────
+    await db.collection("events").insertMany([
       {
         id: 1,
         title: 'ጊዜ በቶሞካ (Gize BeTomoca)',
@@ -430,7 +457,7 @@ const seedData = async () => {
         date: 'Thursday, October 10, 2025',
         time: '5:00 PM to 7:00 PM',
         location: 'Addis Ababa, 4 Kilo, Next to Abrhot Library',
-        color: '#3B2314', // Fallback colors
+        color: '#3B2314',
         textColor: '#FFF4E6',
       },
       {
@@ -470,7 +497,7 @@ const seedData = async () => {
         textColor: '#DFE6E9',
       }
     ]);
-    console.log(`✓ Events seeded: 4`);
+    console.log("✓ Events seeded.");
 
     // ─────────────────────────────────────────────────────────────
     // COMMENTS
@@ -499,20 +526,14 @@ const seedData = async () => {
         user: '/assets/img/users/user-4.jpg'
       }
     ];
-
-    await Comment.insertMany(sampleComments);
+    await db.collection("comments").insertMany(sampleComments);
     console.log(`✓ Comments seeded: ${sampleComments.length}`);
 
-    console.log('\n Seed data successfully corrected to match requested products!');
-    process.exit(0);
-  } catch (error) {
-    console.error('Error during seeding:', error);
-    process.exit(1);
+    console.log("\n Atlas Seed Data successfully populated!");
+
+  } finally {
+    // Ensures that the client will close when you finish/error
+    await client.close();
   }
-};
-
-if (require.main === module) {
-  seedData();
 }
-
-module.exports = seedData;
+run().catch(console.dir);
